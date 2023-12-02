@@ -28,7 +28,8 @@ contract Election {
 
     mapping(bytes32 => Voter) public voters; // Mapping of people who have already voted
 
-    Candidate[] public candidates; //Mapping of the candidates running
+    mapping(uint256 => Candidate) public candidates; //Mapping of the candidates running
+    uint256[] public candidate_names; 
 
     uint256 endTime; //When the election will end.
 
@@ -55,7 +56,7 @@ contract Election {
         bytes32 hashedVoterID = keccak256(abi.encodePacked(voterId));
 
         //Check to make sure that a voter with this ID has not already voted by seeing if they exist in our mapping of voters.
-        require(!voters[hashedVoterID].voted, "Already voted.");
+        // require(!voters[hashedVoterID].voted, "Already voted.");
 
         //Create a voter object for the voter with the given voterId. Put it in storage.
         Voter memory currentVoter = Voter({
@@ -71,11 +72,17 @@ contract Election {
 
         //If the candidate being voted for doesn't already exist, create a candidate object for them and push them to our list of vandidates.
         if (candidates[name].exists == false ) {
-            candidates.push(Candidate({
+            candidates[name] = Candidate({
                 name: name,
                 voteCount: 0,
                 exists: true
-            }));
+            });
+            // candidates.push(Candidate({
+            //     name: name,
+            //     voteCount: 0,
+            //     exists: true
+            // }));
+            candidate_names.push(name);
         }
         //Increase the number of votes for the given candidate by 1.
         candidates[name].voteCount = candidates[name].voteCount + 1;
@@ -86,16 +93,26 @@ contract Election {
      * @dev Return the name of the winning candidate by seeing which candidate has the most votes
      * @return winningCandidate_ Name of the winner
      */
-    function winningCandidate() public view
+    function winningCandidate(bool time) public view
             returns (bytes32 winningCandidate_)
     {
-        require(block.timestamp>=endTime, "There is no winner, since voting has not ended yet");
+        if (time) {
+            require(block.timestamp>=endTime, "There is no winner, since voting has not ended yet");
+        }
         uint maxVoteCount = 0;
-        for (uint i = 0; i < candidates.length; i++) {
-            if (candidates[i].voteCount > maxVoteCount) {
-                maxVoteCount = candidates[i].voteCount;
-                winningCandidate_ = bytes32(candidates[i].name);
+        bool tie_occured = false;
+        string memory tie;
+        for (uint i = 0; i < candidate_names.length; i++) {
+            if (candidates[candidate_names[i]].voteCount > maxVoteCount) {
+                maxVoteCount = candidates[candidate_names[i]].voteCount;
+                winningCandidate_ = bytes32(candidates[candidate_names[i]].name);
+                tie_occured = false;
+            }
+            else if (candidates[candidate_names[i]].voteCount == maxVoteCount) {
+                tie = string.concat(string(abi.encodePacked(winningCandidate_)), string(abi.encodePacked((bytes32(candidates[candidate_names[i]].name)))));
+                tie_occured = true;
             }
         }
+        require(!tie_occured, string.concat("Tie between: ", tie));
     }
 }
