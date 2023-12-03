@@ -11,7 +11,6 @@ interface IERC20 {
     ) external returns (bool);
 }
 
-
     /** 
     * @title CrowdFunding
     * @author Nayna Siddharth, Shomini Sen, Srinath Rangan, Srikar Munukutla, Isabella Otterson, Sofia Bourche
@@ -49,13 +48,12 @@ contract CrowdFund {
     event Pledge(uint indexed id, address indexed caller, uint amount);
     event Claim(uint id);
     event Refund(uint id, address indexed caller, uint amount);
+    event AddManager(uint id, address indexed newManager);
 
     constructor(address _token, uint _maxDuration) {
         token = IERC20(_token);
         maxDuration = _maxDuration;
     }
-
-    
 
     function createCampaign(address creatorId, uint _goal, uint32 startTime_, uint32 endTime_) external {
         //Checks for the timestamps to make sure they are valid.
@@ -81,6 +79,7 @@ contract CrowdFund {
         });
 
         campaigns[count].approvedWithdrawers[0] = creatorId;
+        campaigns[count].currNumWithdrawers += 1;
 
         emit CreateCampaign(msg.sender,_goal, startTime_ , endTime_);
     }
@@ -113,9 +112,9 @@ contract CrowdFund {
         for (uint i = 0; i < campaign.approvedWithdrawers.length; i++) {
             if (msg.sender == campaign.approvedWithdrawers[i]) {
                 currentWithdrawer = campaign.approvedWithdrawers[i];
+            }
         }
         
-
         require(msg.sender == currentWithdrawer, "You did not create this Campaign");
         require(block.timestamp > campaign.endAt, "Campaign has not ended");
         require(campaign.pledged >= campaign.goal, "Campaign did not succed");
@@ -125,7 +124,6 @@ contract CrowdFund {
         token.transfer(currentWithdrawer, campaign.pledged);
 
         emit Claim(_id);
-    }
     }
 
     function refund(uint _id) external {
@@ -140,5 +138,15 @@ contract CrowdFund {
         emit Refund(_id, msg.sender, bal);
     }
 
+    function addManager(uint _id, address newManager) {
+        Campaign memory campaign = campaigns[_id];
+        require(campaign.currNumWithdrawers < 4, "Campaign has the maximum number of withdrawers")
+        require(block.timestamp >= campaign.startAt, "Campaign has not Started yet");
+        require(block.timestamp <= campaign.endAt, "Campaign has already ended");
+        campaign.approvedWithdrawers[campaign.currNumWithdrawers] = newManager;
+        campaign.currNumWithdrawers + 1;
+
+        emit AddManager(_id, newManager);
+    }
 
 }
