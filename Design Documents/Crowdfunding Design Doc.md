@@ -20,12 +20,13 @@
 
 ## Algorithms
 
-### Launch(int goal, int start, int end)
+### Launch(address studentID, int goal, int start, int end)
 - Initialize crowdfunding campaign 
-- Initialize list of up to 4 managers within the club that have access to withdraw from the campaign
+- Takes in the student ID of the person creating the campaign, the campaign goal, start and end time.
 
 ### CancelCampaign(campaign id)
-- Cancel the campaign by removing the campaign from campaigns, and this is done by setting the active boolean to false
+- Cancel the campaign by removing the campaign from campaign
+- Make sure that the person cancelling the campaign is allowed to.
 
 ### PledgeAmount(campaign id, amount)
 - Check if campaign started
@@ -38,7 +39,7 @@
 
 ### RefundCampaign(campaign id)
 - Check to see if conditions have been met in order for valid refund (campaign hasn’t ended or campaign has succeeded)
-- Use pledgedAmount map to transfer correct amount of tokens back to person requesting refund 
+- Use pledgedMapping nested map to transfer correct amount of tokens back to person requesting refund 
 
 ### AddManager(studentID)
 - Adds a student to the list of execs in a club so that they can also withdraw money from the campaign; limit of 4 managers
