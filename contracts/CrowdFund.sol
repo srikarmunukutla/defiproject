@@ -1,152 +1,220 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
+// Transfer function for tokens.
 interface IERC20 {
     function transfer(address, uint) external returns (bool);
 
-    function transferFrom(
-        address,
-        address,
-        uint
-    ) external returns (bool);
+    function transferFrom(address, address, uint) external returns (bool);
 }
 
-    /** 
-    * @title CrowdFunding
-    * @author Nayna Siddharth, Shomini Sen, Srinath Rangan, Srikar Munukutla, Isabella Otterson, Sofia Bourche
-    * @dev Smart contract used for management of crowdfunding for school clubs. 
-    */
+contract CrowdFunding {
+    event Launch(
+        address indexed creatorID,
+        uint goal,
+        uint32 startTime,
+        uint32 endTime
+    );
+    event CancelCampaign(address studentID, address campaignID);
+    event PledgeAmount(uint indexed id, address indexed caller, uint amount);
+    event ClaimCampaign(address campaignID, address studentID);
+    event RefundCampaign(address campaignID, address indexed caller, uint amount);
+    event AddManager(address campaignID, address indexed studentID);
 
-contract CrowdFund {
     struct Campaign {
-        address[4] approvedWithdrawers;
-        uint currNumWithdrawers;
+        // Address of the creator of the campaign-- hashed studentID
         address creator;
+        // The goal amount trying to be raised
         uint goal;
+        // Current amount that has been raised
         uint pledged;
-        uint256 startAt;
-        uint256 endAt;
+        // When the campaign starts
+        uint32 startTime;
+        // When the campaign ends
+        uint32 endTime;
+        // Boolean indicating if funds have already been claimed
         bool claimed;
-        bool active;
+        //The current number of withdrawers allowed. Can't go above 4
+        uint currNumWithdrawers;
+        //Student IDs of the approved withdrawers
+        address[4] approvedWithdrawers;
+
     }
 
     IERC20 public immutable token;
-    uint public count;
+    //Maximum duration of a campaign
     uint public maxDuration;
-
-    //Public mapping of campaign IDs to campaign structs. 
+    // Keeps track of current num of campaigns
+    // Count is used to generate an ID for a campaign, that campaign creators use to access their campaigns.
+    uint public count;
+    // Mapping from campaign ID given to creators, to campaign ID
+    mapping(address => uint) public campaignAddress;
+    // Mapping from campaign ID to campaign
     mapping(uint => Campaign) public campaigns;
-    mapping(uint => mapping(address => uint)) public pledgedAmount;
+    // Mapping from campaign id => pledger => amount pledged
+    mapping(address => mapping(address => uint)) public pledgeMapping;
 
-    event CreateCampaign(
-        address indexed creator,
-        uint goal,
-        uint32 startAt,
-        uint32 endAt
-    );
-    event Cancel(uint id);
-    event Pledge(uint indexed id, address indexed caller, uint amount);
-    event Claim(uint id);
-    event Refund(uint id, address indexed caller, uint amount);
-    event AddManager(uint id, address indexed newManager);
-
-    constructor(address _token, uint _maxDuration) {
+    constructor(address _token, uint maxDuration_) {
         token = IERC20(_token);
-        maxDuration = _maxDuration;
+        maxDuration = maxDuration_;
     }
 
-    function createCampaign(address creatorId, uint _goal, uint32 startTime_, uint32 endTime_) external {
-        //Checks for the timestamps to make sure they are valid.
-        require(startTime_ >= block.timestamp,"Start time is less than current time.");
-        require(endTime_ > startTime_ ,"End time is less than Start time");
-        require(endTime_ <= block.timestamp + maxDuration, "End time exceeds the maximum Duration allowed for a campaign");
-
-        //hash the ID of the campaign creator
+    /**
+    * @dev Launch a campaign.
+    * @param studentID The ID of the student launching the campaign
+    * @param goalAmount The amount the campaign is trying to raise
+    * @param startTime The time that the campaign starts at
+    * @param endTime The time that the campaign ends.
+    */
+    function launch(uint studentID, uint goalAmount, uint32 startTime, uint32 endTime) external returns (address) {
+        require(startTime >= block.timestamp, "Start time is less than current time.");
+        require(endTime >= startTime, "Start time is greater than the end time");
+        require(endTime <= block.timestamp + maxDuration, "The campaign is not allowed to run for that long.");
         
-        bytes32 hash = keccak256(abi.encodePacked(creatorId));
-        address hashedCampaignCreatorId = address(uint160(uint256(hash)));
+        //Hash of the student ID of the campaign creator 
+        bytes32 creatorHash = keccak256(abi.encodePacked(studentID));
+        address hashedCampaignCreatorId = address(uint160(uint256(creatorHash)));
 
+        //Campaign address returned to the campaign creator
+        bytes32 campaignHash = keccak256(abi.encodePacked(count));
+        address hashedCampaignID = address(uint160(uint256(campaignHash)));
+        
         campaigns[count] = Campaign({
             creator: hashedCampaignCreatorId,
-            goal: _goal,
+            goal: goalAmount,
             pledged: 0,
-            startAt: startTime_,
-            endAt: endTime_,
+            startTime: startTime,
+            endTime: endTime,
             claimed: false,
-            active: true,
             currNumWithdrawers: 0,
-            approvedWithdrawers: [address(0),address(0),address(0),address(0)]
+            approvedWithdrawers:  [address(0), address(0), address(0), address(0)]
         });
 
-        campaigns[count].approvedWithdrawers[0] = creatorId;
+        campaigns[count].approvedWithdrawers[0] = hashedCampaignCreatorId;
         campaigns[count].currNumWithdrawers += 1;
+        
+        //add the mapping of the campaign ID to the count 
+        campaignAddress[hashedCampaignID] = count;
+        count += 1;
 
-        emit CreateCampaign(msg.sender,_goal, startTime_ , endTime_);
+        emit Launch(msg.sender, goalAmount, startTime, endTime);
+
+        return hashedCampaignID;
     }
 
-    function cancel(uint _id) external {
-        Campaign memory campaign = campaigns[_id];
-        address campaignCreator = campaign.creator;
-        require(campaignCreator == msg.sender, "You did not create this Campaign");
-        require(block.timestamp < campaign.startAt, "Campaign has already started");
+    /**
+    * @dev Function to cancel a campaign
+    * @param studentID ID of the student trying to cancel the campaign (must be an approved withdrawer)
+    * @param campaignID The ID of the campaign itself.
+    */
 
-        delete campaigns[_id];
-        emit Cancel(_id);
-    }
+    function cancelCampaign(address studentID, address campaignID) external {
+        uint campaignNum = campaignAddress[campaignID];
+        Campaign memory campaign = campaigns[campaignNum];
+        
+        bytes32 studentHash = keccak256(abi.encodePacked(studentID));
+        address studentAddress = address(uint160(uint256(studentHash)));
 
-    function pledge(uint _id, uint _amount) external {
-        Campaign storage campaign = campaigns[_id];
-        require(block.timestamp >= campaign.startAt, "Campaign has not Started yet");
-        require(block.timestamp <= campaign.endAt, "Campaign has already ended");
-        require(_amount > 0, "Donation amount must be greater than zero");
-        campaign.pledged += _amount;
-        pledgedAmount[_id][msg.sender] += _amount;
-        token.transferFrom(msg.sender, address(this), _amount);
-
-        emit Pledge(_id, msg.sender, _amount);
-    }
-
-    function claim(uint _id) external {
-        Campaign storage campaign = campaigns[_id];
-        address currentWithdrawer = campaign.creator;
-        for (uint i = 0; i < campaign.approvedWithdrawers.length; i++) {
-            if (msg.sender == campaign.approvedWithdrawers[i]) {
-                currentWithdrawer = campaign.approvedWithdrawers[i];
+        bool allowedCreator = false;
+        for (uint256 i = 0; i < 4; i++) {
+            if (campaign.approvedWithdrawers[i] == studentAddress) {
+                allowedCreator = true;
             }
         }
-        
-        require(msg.sender == currentWithdrawer, "You did not create this Campaign");
-        require(block.timestamp > campaign.endAt, "Campaign has not ended");
-        require(campaign.pledged >= campaign.goal, "Campaign did not succed");
-        require(!campaign.claimed, "claimed");
+        require(allowedCreator == true, "You are not allowed to cancel this campaign");
+        require(block.timestamp < campaign.endTime, "The campaign has already started");
+
+        delete campaigns[campaignNum];
+        emit CancelCampaign(studentAddress, campaignID);
+    }
+
+    /**
+    * @dev Function for a donor to donate to a campaign
+    * @param campaignID The ID of the campaign that is being donated to 
+    * @param amount Amount that the donor would like to donate
+    */
+    function pledgeAmount(address campaignID, uint amount) external {
+        //Retrieve the campaign number from the given campaignID
+        uint campaignNum = campaignAddress[campaignID];
+        //Retreieve the campaign object from the campaignNum
+        Campaign storage campaign = campaigns[campaignNum];
+        require(block.timestamp >= campaign.startTime, "This campaign has not started yet, wait to donate");
+        require(block.timestamp <= campaign.endTime, "This campaign has ended.");
+
+        //Increase the amount pledged to a campaign by an amount
+        campaign.pledged += amount;
+        //Keep track of the amount that a certain person donated to a campaign (for refunds)
+        pledgeMapping[campaignID][msg.sender] += amount;
+        //Transfer the token (money) from sender to campaign
+        token.transferFrom(msg.sender, campaignID, amount);
+
+        emit PledgeAmount(campaignNum, msg.sender, amount);
+    }
+
+    /**
+    * @dev Function that allows a student to claim the funds of their campaign
+    * @param studentID ID of the student trying to claim a campaign fund
+    * @param campaignID ID of the campaign trying to be claimed
+    */
+    function claim(address campaignID, address studentID) external {
+        //Retrieve the campaign from a campaignID
+        uint campaignNum = campaignAddress[campaignID];
+        Campaign storage campaign = campaigns[campaignNum];
+        //get the hashed address of the student ID
+        bytes32 studentHash = keccak256(abi.encodePacked(studentID));
+        address studentAddress = address(uint160(uint256(studentHash)));
+
+        bool allowed = false;
+        for(uint256 i = 0; i < 4; i++) {
+            if (campaign.approvedWithdrawers[i] == studentAddress) {
+                allowed = true;
+            }
+        }
+        require(allowed == true, "You are not an approved withdrawer of this event");
+        require(block.timestamp > campaign.endTime, "Please wait for the campaign to finish before withdrawing funds.");
+        require(campaign.pledged >= campaign.goal, "The goal was not met, so unfortunately funds cannot be claimed. ");
+        require(!campaign.claimed, "The funds for this campaign have already been claimed.");
 
         campaign.claimed = true;
-        token.transfer(currentWithdrawer, campaign.pledged);
+        token.transfer(campaign.creator, campaign.pledged);
 
-        emit Claim(_id);
+        emit ClaimCampaign(campaignID, studentID);
     }
 
-    function refund(uint _id) external {
-        Campaign memory campaign = campaigns[_id];
-        require(block.timestamp > campaign.endAt, "not ended");
-        require(campaign.pledged < campaign.goal, "You cannot Withdraw, Campaign has succeeded");
+    /**
+    * @dev If the campaing doesn't meet it's goal, fund get returned to donors. Donors must request a refund
+    * @param campaignID ID of the campaing to retrieve refunds from
+    */
+    function refund(address campaignID) external {
+        uint campaignNum = campaignAddress[campaignID];
+        Campaign storage campaign = campaigns[campaignNum];
+        require(block.timestamp > campaign.endTime, "This campaign has not ended yet, so we cannot return your funds.");
+        require(campaign.pledged < campaign.goal, "The funds cannot be returned, as the goal for the campaign was met.");
 
-        uint bal = pledgedAmount[_id][msg.sender];
-        pledgedAmount[_id][msg.sender] = 0;
+        uint bal = pledgeMapping[campaignID][msg.sender];
+        pledgeMapping[campaignID][msg.sender] = 0;
         token.transfer(msg.sender, bal);
 
-        emit Refund(_id, msg.sender, bal);
+        emit RefundCampaign(campaignID, msg.sender, bal);
     }
 
-    function addManager(uint _id, address newManager) {
-        Campaign memory campaign = campaigns[_id];
-        require(campaign.currNumWithdrawers < 4, "Campaign has the maximum number of withdrawers")
-        require(block.timestamp >= campaign.startAt, "Campaign has not Started yet");
-        require(block.timestamp <= campaign.endAt, "Campaign has already ended");
-        campaign.approvedWithdrawers[campaign.currNumWithdrawers] = newManager;
+    /**
+    * @dev Add an approved withdrawer of a campaign
+    * @param campaignID ID of the campaing to add an approved withdrawer from
+    * @param studentID ID of the student to be added as an approved withdrawer
+    */
+    function addManager(address campaignID, address studentID) external{
+        uint campaignNum = campaignAddress[campaignID];
+        Campaign storage campaign = campaigns[campaignNum];
+        require(campaign.currNumWithdrawers < 4, "Campaign has the maximum number of withdrawers");
+        require(block.timestamp >= campaign.startTime, "Campaign has not Started yet");
+        require(block.timestamp <= campaign.endTime, "Campaign has already ended");
+
+        bytes32 idEncoded = keccak256(abi.encodePacked(studentID));
+        address hashedStudentID = address(uint160(uint256(idEncoded)));
+        campaign.approvedWithdrawers[campaign.currNumWithdrawers] = hashedStudentID;
         campaign.currNumWithdrawers + 1;
 
-        emit AddManager(_id, newManager);
+        emit AddManager(campaignID, hashedStudentID);
     }
-
 }
