@@ -8,6 +8,9 @@ pragma solidity >=0.7.0 <0.9.0;
 
 contract TestVotingContract {
 
+    /**
+    Checks to see if a a winner is correctly determined.
+    */
     function testCheckWinner () public {
         uint256 votingDuration = 1 hours;
         Election electionTest = new Election(votingDuration);
@@ -27,6 +30,9 @@ contract TestVotingContract {
         Assert.equal(electionTest.winningCandidate(false), bytes32("Bird"), "Bird should be the winner name");
     }
 
+    /**
+    Checks to see if a tie is correctly called.
+    */
     function testCheckTie () public {
         uint256 votingDuration = 1 hours;
         Election electionTest2 = new Election(votingDuration);
@@ -42,6 +48,8 @@ contract TestVotingContract {
         Assert.isFalse(success, "Tie Occured");
     }
 
+    /**
+    Throw-away test to see if time error throws properly, */
     function testTimeHinderance () public {
         uint256 votingDuration = 1 seconds;
         Election electionTest3 = new Election(votingDuration);
@@ -53,6 +61,22 @@ contract TestVotingContract {
         (success, revertReason) = address(electionTest3).call(abi.encodeWithSignature("winningCandidate(bool)", true));
 
         Assert.isFalse(success, "Someone voted before time ended.");
+    }
+
+    /**
+    Tests to catch requirement if a candidate has already voted. 
+    */
+    function testAlreadyVoted () public {
+        uint256 votingDuration = 1 seconds;
+        Election electionTest4 = new Election(votingDuration);
+        electionTest4.vote(22, bytes32("Duncan"));
+        electionTest4.vote(22, bytes32("Neal"));
+
+        bool success;
+        bytes memory revertReason;
+        (success, revertReason) = address(electionTest4).call(abi.encodeWithSignature("vote(uint, bytes32)", 22, bytes32("Neal")));
+
+        Assert.isFalse(success, "Already voted!.");
     }
 
 }

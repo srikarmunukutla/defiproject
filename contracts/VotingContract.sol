@@ -49,42 +49,37 @@ contract Election {
      */
     function vote(uint voterId, bytes32 candidateName) public {
 
-        //Check to make sure that the time for this election has not expired yet. If it has, call the voting end functions
+        // Check to make sure that the time for this election has not expired yet. If it has, call the voting end functions
         require(block.timestamp < endTime, "Voting for this election has expired");
         
-        //Calculate the hash of the voter's student ID.
+        // Calculate the hash of the voter's student ID.
         bytes32 hashedVoterID = keccak256(abi.encodePacked(voterId));
 
-        //Check to make sure that a voter with this ID has not already voted by seeing if they exist in our mapping of voters.
-        // require(!voters[hashedVoterID].voted, "Already voted.");
+        // Check to make sure that a voter with this ID has not already voted by seeing if they exist in our mapping of voters.
+        require(voters[hashedVoterID].exists, "Already voted.");
 
-        //Create a voter object for the voter with the given voterId. Put it in storage.
+        // Create a voter object for the voter with the given voterId. Put it in storage.
         Voter memory currentVoter = Voter({
             idHash: hashedVoterID,
             voted: false
         });
         currentVoter.voted = true;
-        //Add the voter with this student id to our lists of voters, so that we can make sure they aren't voting multiple times.
-        //Future improvement would be to give each voter multiple votes, and only add them to our list of voters once they have 0 votes left.
+        // Add the voter with this student id to our lists of voters, so that we can make sure they aren't voting multiple times.
+        // Future improvement would be to give each voter multiple votes, and only add them to our list of voters once they have 0 votes left.
         voters[hashedVoterID] = currentVoter;
 
         uint256 name = uint256(candidateName);
 
-        //If the candidate being voted for doesn't already exist, create a candidate object for them and push them to our list of vandidates.
+        // If the candidate being voted for doesn't already exist, create a candidate object for them and push them to our list of vandidates.
         if (candidates[name].exists == false ) {
             candidates[name] = Candidate({
                 name: name,
                 voteCount: 0,
                 exists: true
             });
-            // candidates.push(Candidate({
-            //     name: name,
-            //     voteCount: 0,
-            //     exists: true
-            // }));
             candidate_names.push(name);
         }
-        //Increase the number of votes for the given candidate by 1.
+        // Increase the number of votes for the given candidate by 1.
         candidates[name].voteCount = candidates[name].voteCount + 1;
 
     }
@@ -96,12 +91,15 @@ contract Election {
     function winningCandidate(bool time) public view
             returns (bytes32 winningCandidate_)
     {
+        // just to see if error message works
         if (time) {
-            require(block.timestamp>=endTime, "There is no winner, since voting has not ended yet");
+            require(block.timestamp<=endTime, "There is no winner, since voting has not ended yet");
         }
         uint maxVoteCount = 0;
         bool tie_occured = false;
         string memory tie;
+
+        // sees who has the max amounts of votes and also checks to see if there was a tie
         for (uint i = 0; i < candidate_names.length; i++) {
             if (candidates[candidate_names[i]].voteCount > maxVoteCount) {
                 maxVoteCount = candidates[candidate_names[i]].voteCount;
@@ -113,6 +111,8 @@ contract Election {
                 tie_occured = true;
             }
         }
+
+        // throw error if there was no error
         require(!tie_occured, string.concat("Tie between: ", tie));
     }
 }
